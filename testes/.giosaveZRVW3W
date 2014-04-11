@@ -1,0 +1,302 @@
+<?php 
+set_time_limit (60);
+
+//http://developers.facebook.com/docs/reference/api/
+//$url=file_get_contents("https://graph.facebook.com/302567693090678/events?access_token=$token&limit=20");
+//$url=file_get_contents("https://graph.facebook.com/search?q=coffee&type=place&center=37.76,-122.427&distance=1000&access_token=$token");
+//$url=file_get_contents("https://graph.facebook.com/search?q=my friends who like acdc&access_token=$token");
+$app_id = "180386015481989";
+$app_secret = "aaea528d446f0dfa15f1e84356d0baae";
+$app_token_url = "https://graph.facebook.com/oauth/access_token?"
+. "client_id=" . $app_id
+. "&client_secret=" . $app_secret 
+. "&grant_type=client_credentials";
+
+$response = file_get_contents($app_token_url);
+$params = null;
+parse_str($response, $params);
+
+$token=$params['access_token'];
+
+//$_POST['event'] = "https://www.facebook.com/events/509410502479097/";
+//$_POST['event'] = "https://www.facebook.com/events/1420018581545022/";
+if($_POST['event'] || $_GET['event']){
+	$gender_list = array();
+	$event = explode("/",$_POST['event']);
+	$event = $event[4];
+
+	if($_GET['event']){ 
+		$event = $_GET['event'];
+	}
+
+	// invited, noreply,attending,maybe
+	$url = @file_get_contents("https://graph.facebook.com/$event/invited?access_token=$token");
+	$url = str_replace("\u00e9","e",$url);
+	$url = str_replace("\u00ed","i",$url);
+	$url = str_replace("\u00e7","c",$url);
+	$url = str_replace("\u00e3","a",$url);
+	$url = str_replace("\u00f4","o",$url);
+	$url = str_replace("\u00e1","a",$url);
+	$url = str_replace("\u00ea","e",$url);
+	$url = str_replace("\u00fa","u",$url);
+	$url = str_replace("\u00d3","o",$url);
+	$url = str_replace("\u00e2","a",$url);
+	$url = str_replace("\u00c1","a",$url);
+	$url_info = @file_get_contents("https://graph.facebook.com/$event?access_token=$token");
+	$obj = json_decode($url,true);
+	$event_info = json_decode($url_info,true);
+
+	$event_privacy = $event_info['privacy']; 
+	$event_name = $event_info['name']; 		
+	$event_start_time = $event_info['start_time']; 		
+	$event_end_time = $event_info['end_time']; 		
+	$event_location = $event_info['location']; 		
+	$event_description = $event_info['description']; 		
+	//load the gender list
+	$list = file_get_contents("names.csv");
+	$list_exp = explode("\n",$list); 
+	$total=0;
+	$male=0;
+	$female=0;
+	$data_size=75;
+	
+	preg_match_all("/attending/",$url,$attending_num);
+	$attending = sizeof($attending_num[0]); 
+	preg_match_all("/unsure/",$url,$unsure_num);
+	$unsure = sizeof($unsure_num[0]); 
+	preg_match_all("/declined/",$url,$declined_num);
+	$declined = sizeof($declined_num[0]); 
+
+	$category=$attending;
+	$male_photos=array();
+	$female_photos=array();
+
+	if($category > 7000){
+		$category=7000;
+	}
+
+	if($event_privacy!=="OPEN"){
+		echo "<meta HTTP-EQUIV='REFRESH' content='0; url=index.php?error=privacy'>";
+		die;
+	}
+
+	for($i=0; $i<$category; $i++){
+		$status=$obj['data'][$i]['rsvp_status'];
+		//attending,unsure,declined
+		if($status=="attending"){	
+			$name=$obj['data'][$i]['name'];
+			$id=$obj['data'][$i]['id'];
+			$name_exp=explode(" ",$name);
+			$name=$name_exp[0];
+			if(preg_match("/\n$name,male/i",$list)){
+				$gender="male";
+				$male_photos[]= "<div id='$id' style='display:inline;'><a target='_blank' href='http://facebook.com/$id'><img class='photos1' src='http://graph.facebook.com/$id/picture?type=square' /></a></div>";
+				$male++;
+				$total++;
+			}elseif(preg_match("/\n$name,female/i",$list)){
+				$gender="female";
+				$female_photos[]="<div id='$id' style='display:inline;'><a target='_blank' href='http://facebook.com/$id'><img class='photos2' src='http://graph.facebook.com/$id/picture?type=square' /></a></div>";
+				$female++;
+				$total++;	
+			}else{
+				$ids_to_gender[]=$id;
+			}
+		}	
+	}
+
+	$query = "";
+	for($k=0;$k<sizeof($ids_to_gender);$k++){
+		$id=$ids_to_gender[$k];
+		if($k<sizeof($ids_to_gender)){
+			$query=$query."\"query$k\":\"SELECT+uid,name,sex+FROM+user+WHERE+uid=$id\"";
+			$query=$query.',';
+		}else{
+			$query=$query."\"query$k\":\"SELECT+uid,name,sex+FROM+user+WHERE+uid=$id\"";
+		}
+	}
+	$search_gender = file_get_contents("https://graph.facebook.com/fql?q={+$query+}&access_token=$token");
+	$obj_gender = json_decode($search_gender,true);
+
+	for($k=0;$k<sizeof($ids_to_gender);$k++){
+		$gender = $obj_gender['data'][0]['fql_result_set'][$k]['sex'];
+		$name = $obj_gender['data'][0]['fql_result_set'][$k]['name'];
+		$name_exp = explode(" ",$name);
+		$name = $name_exp[0];
+		$id = $obj_gender['data'][0]['fql_result_set'][$k]['uid'];
+
+		if($gender=="male"){
+			$male_photos[]= "<div id='$id' style='display:inline;'><a target='_blank' href='http://facebook.com/$id'><img class='photos1' src='http://graph.facebook.com/$id/picture?type=square' /></a></div>";
+			$male++;
+			$total++;
+		}elseif($gender=="female"){
+			$female_photos[]="<div id='$id' style='display:inline;'><a target='_blank' href='http://facebook.com/$id'><img class='photos2' src='http://graph.facebook.com/$id/picture?type=square' /></a></div>";
+			$female++;
+			$total++;	
+		}
+
+		if($name){
+			$fh=fopen("names.csv", "a+") or die("Erro ao abrir arquivo");
+			fwrite($fh, "$name,$gender\n");
+			fclose($fh);
+		}
+	}
+
+	$percent_male = @number_format(($male/$total)*100,1);
+	//$percent_female  = number_format(($female/$total)*100,1);
+	$percent_female = 100 - $percent_male;
+}else{
+	$percent_male = 0;
+	$percent_female  = 0;
+}
+
+
+echo "
+<!DOCTYPE html>
+<html lang='en'>
+  <head>
+    <meta charset='UTF-8'>
+    <title>Mulherômetro</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <meta name='description' content=''>
+    <meta name='author' content=''>
+   <meta property='fb:admins' content='felippe.gallogomes'/>
+
+	<link href='css/bootstrap.css' rel='stylesheet'>
+	<link href='css/stickyfooter.css' rel='stylesheet'>
+
+    <style type='text/css'>
+      body {
+        padding-top: 20px;
+        padding-bottom: 40px;
+        background-image:url('img/bg.png');
+	color:white;
+	font-family: Verdana,Arial,serif;
+	text-shadow: 1px 1px #333;
+      }
+
+      .bg {
+	background:rgba(0,0,100,0.5);
+	height:auto;
+	min-height:100%;
+	width:100%;
+	position:absolute;
+	top:0px;
+      }
+
+
+	.scrollbar
+	{
+		float: left;
+		height: 300px;
+		width: 65px;
+		overflow-y: scroll;
+	}
+
+	#style-0::-webkit-scrollbar
+	{
+		width: 4px;
+	}
+
+	#style-0::-webkit-scrollbar-thumb
+	{
+		border-radius: 2px;
+		background-color: #24335A;
+	}
+
+	#style-1::-webkit-scrollbar-track
+	{
+		border-radius: 10px;
+	}
+
+	#style-1::-webkit-scrollbar
+	{
+		width: 12px;
+	}
+
+	#style-1::-webkit-scrollbar-thumb
+	{
+		border-radius: 10px;
+		-webkit-box-shadow: inset 0 0 6px #333;
+		background-color: #9f9;
+	}
+
+	#style-2::-webkit-scrollbar-track
+	{
+		border-radius: 10px;
+	}
+
+	#style-2::-webkit-scrollbar
+	{
+		width: 12px;
+	}
+
+	#style-2::-webkit-scrollbar-thumb
+	{
+		border-radius: 10px;
+		-webkit-box-shadow: inset 0 0 6px #333;
+		background-color: #ff88de;
+	}
+
+	h1,h2,h3,h4{
+		color:white;
+	}
+
+	.photos1{
+		box-shadow: 0 0 2px #fff, 0 0 5px #55ff55,inset 0px 0px 10px rgba(0,0,0,0.9);
+		margin:2px;
+	}
+
+	.photos2{
+		box-shadow: 0 0 2px #fff, 0 0 5px #ff00de;
+		margin:2px;
+	}
+
+	.neon1{
+		font-family: 'Parisienne', cursive;
+		text-shadow: 0 0 10px #fff, 0 0 30px #fff,0 0 70px #ff00de, 0 0 100px #ff00de;
+	}
+
+	.neon2{
+		font-family: 'Parisienne', cursive;
+		text-shadow: 0 0 10px #fff, 0 0 30px #fff,0 0 70px #ff00de, 0 0 100px #ff00de;
+	}
+
+      /* Custom container */
+      .container-narrow {
+        margin: 0 auto;
+        max-width: 700px;
+      }
+      .container-narrow > hr {
+        margin: 30px 0;
+      }
+
+      /* Main marketing message and sign up button */
+      .jumbotron {
+        margin: 60px 0;
+        text-align: center;
+      }
+      .jumbotron h1 {
+        font-size: 72px;
+        line-height: 1;
+      }
+      .jumbotron .btn {
+        font-size: 21px;
+        padding: 14px 24px;
+      }
+
+      /* Supporting marketing content */
+      .marketing {
+        margin: 60px 0;
+      }
+      .marketing p + h4 {
+        margin-top: 28px;
+      }
+    </style>
+    <link href='css/bootstrap-responsive.css' rel='stylesheet'>
+
+    <!-- HTML5 shim, for IE6-8 support of HTML5 elements -->
+    <!--[if lt IE 9]>
+      <script src='js/html5shiv.js'></script>
+    <![endif]-->
+
+    <!-- Fav and t
